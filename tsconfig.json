@@ -1,24 +1,16 @@
 {
   "compilerOptions": {
-    "baseUrl": ".",
-    "inlineSourceMap": true,
-    "inlineSources": true,
+    "target": "ES2020",
     "module": "ESNext",
-    "target": "ES6",
-    "allowJs": true,
-    "noImplicitAny": true,
-    "moduleResolution": "node",
-    "importHelpers": true,
-    "isolatedModules": true,
-    "strictNullChecks": true,
-    "lib": [
-      "DOM",
-      "ES5",
-      "ES6",
-      "ES7"
-    ]
+    "moduleResolution": "Bundler",
+    "strict": true,
+    "resolveJsonModule": true,
+    "esModuleInterop": true,
+
+    "types": ["svelte", "node"],
+    "plugins": [{ "name": "@sveltejs/typescript-plugin" }],
+
+    "verbatimModuleSyntax": true
   },
-  "include": [
-    "**/*.ts"
-  ]
+  "include": ["src/**/*", "**/*.svelte"]
 }
