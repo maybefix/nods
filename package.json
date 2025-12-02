@@ -1,0 +1,29 @@
+{
+	"name": "obsidian-sample-plugin",
+	"version": "1.0.0",
+	"description": "This is a sample plugin for Obsidian (https://obsidian.md)",
+	"main": "main.js",
+	"scripts": {
+		"dev": "node esbuild.config.mjs",
+		"build": "node -e \"process.env.BUILD='production';import('./esbuild.config.mjs')\""
+	},
+	"keywords": [],
+	"author": "",
+	"license": "MIT",
+	"devDependencies": {
+		"@types/node": "^16.11.6",
+		"@typescript-eslint/eslint-plugin": "5.29.0",
+		"@typescript-eslint/parser": "5.29.0",
+		"builtin-modules": "3.3.0",
+		"esbuild": "^0.17.3",
+		"esbuild-svelte": "^0.9.3",
+		"obsidian": "latest",
+		"svelte": "^4.2.20",
+		"svelte-preprocess": "^6.0.3",
+		"tslib": "2.4.0",
+		"typescript": "^5.9.2"
+	},
+	"dependencies": {
+		"lucide-svelte": "^0.544.0"
+	}
+}
