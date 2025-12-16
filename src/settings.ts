@@ -10,6 +10,9 @@ export interface NodsSettings {
 
     /** クリア時のバックアップ世代数（0 で無効） */
     backupGenerations: number;            // 既定: 1
+
+    composerPlacementDesktop: "top" | "bottom";
+    composerPlacementMobile: "top" | "bottom";
 }
 
 export const DEFAULT_SETTINGS: NodsSettings = {
@@ -17,4 +20,7 @@ export const DEFAULT_SETTINGS: NodsSettings = {
     pcEnterSendDisabled: false,
     mobileEnterSendEnabled: false,
     backupGenerations: 1,
+    composerPlacementDesktop: "top",
+    composerPlacementMobile: "bottom",
 };
+

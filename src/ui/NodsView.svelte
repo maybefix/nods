@@ -8,13 +8,9 @@
   import { RefreshCw } from 'lucide-svelte';
 
   import type NodsPlugin from "../main";
-  // ★ 値として使うので type なし
   import { Platform, Notice, normalizePath, TFile, TFolder } from "obsidian";
 
-  // ★ types からは純粋な型/ロジック
-  import { pushMessage, type Session, createSession, type Message } from "../types";
-
-  // ★ splitMarkdownToMessages は io/temp から
+  import { pushMessage, type Session, createSession, type Message, type ComposerPlacement } from "../types";
   import { saveSessionToTempFile, loadSessionFromTempFile } from "../io/temp";
   import { exportMarkdown } from "../io/export";
   import { backupSessionMarkdown } from "../io/backup";
@@ -24,7 +20,7 @@
   export let plugin: NodsPlugin;
   export let initialSession: Session;
   export let initialTempFile: TFile;
-  export let api: any = {};      // props が無くても安全
+  export let api: any = {};
   type EditPayload = { id: string; text: string; index: number };
   let composerRef: any = null;
   let ready = false;
@@ -139,21 +135,17 @@
     ackShownIds = session.messages.map(m => m.id);
     attachWatcher();
 
-    // Welcome → 本体DOM確定を待つ
     await tick();
 
-    // まずは既存の refreshLog API があれば使う
     let refreshed = false;
     if (typeof api?.refreshLog === "function") {
       try {
         await api.refreshLog();
         refreshed = true;
       } catch {
-        // 失敗時はフォールバックへ
       }
     }
 
-    // refreshLog が無い or 失敗した時のフォールバック
     if (!refreshed && tempFile) {
       try {
         const loaded = await loadSessionFromTempFile(plugin.app, tempFile);
@@ -164,10 +156,8 @@
       }
     }
   
-    // ★ 最新状態で最下部へ
     await tick();
-    await scrollToBottom(false); // 子TimelineのscrollToBottomを呼ぶ場合
-    // もしくは: await scrollToBottom(false); // 親で持っているスクロール関数があれば
+    await scrollToBottom(false);
   }
 
   // ========== 送信 ==========
@@ -201,32 +191,27 @@
   function onTimelineEdited(e: CustomEvent<EditPayload>) {
     const { id, text } = e.detail;
 
-    // 対象メッセージを探す
     const idx = session.messages.findIndex((m) => m.id === id);
     if (idx === -1) return;
 
-    // ★ 不変更新で再代入：Svelteの反映を確実にする
     session = {
       ...session,
       messages: session.messages.map((m) => (m.id === id ? { ...m, text } : m)),
       updatedAt: new Date().toISOString(),
     };
 
-    // ★ nods-tempへ即保存（あなたの既存関数名に合わせて）
     persistTempSelfWrite()
       .then(() => {
-        // 保存後、最下部へ（必要なら）
         if (timelineEl) timelineEl.scrollTop = timelineEl.scrollHeight;
       })
       .catch(() => {});
 }
 
     async function scrollToBottom(smooth = true) {
-      await tick(); // DOM更新を待ってから
+      await tick();
       await tick();
       const el = timelineEl;
       if (!el) return;
-      // レイアウト反映後のフレームで確実に
       requestAnimationFrame(() => {
         try {
           el.scrollTo({
@@ -234,23 +219,20 @@
             behavior: smooth ? "smooth" : "auto",
           });
         } catch {
-          // 古い環境向けフォールバック
           el.scrollTop = el.scrollHeight;
         }
       });
     }
 
-  /* ===== メニュー処理ブロック（あなたの現行コードを最小修正で採用） ===== */
   function doExport() { api.exportLog?.(); }
   function doLoad() { api.loadFile?.(); }
   function doClear() { api.clearLog?.(); }
-  function doRefresh() { api.refreshLog?.(); }  // ★ 追加
+  function doRefresh() { api.refreshLog?.(); }
 
-  // main.ts からの API 実装
   api.exportLog = async () => {
     try {
       if (!resolveExportFolder()) {
-        const ok = await ensureExportFolderExists({ showNotice: true }); // ← ローカル実装を使用
+        const ok = await ensureExportFolderExists({ showNotice: true });
         if (!ok) throw new Error("出力先フォルダが見つかりません。");
       }
       const folder = resolveExportFolder();
@@ -266,7 +248,7 @@
 
   api.loadFile = async () => {
     if (!resolveExportFolder()) {
-      const ok = await ensureExportFolderExists({ showNotice: true }); // ← ローカル実装
+      const ok = await ensureExportFolderExists({ showNotice: true });
       if (!ok) { new Notice("出力先フォルダが見つかりません。"); return; }
     }
     const folder = resolveExportFolder();
@@ -278,9 +260,9 @@
       onPick: async (file: TFile) => {
         try {
           const txt = await plugin.app.vault.read(file);
-          const msgs: Message[] = splitMarkdownToMessages(txt); // ← 型を明示
+          const msgs: Message[] = splitMarkdownToMessages(txt);
           session = { ...session, messages: msgs, updatedAt: new Date().toISOString() };
-          ackShownIds = msgs.map((m: Message) => m.id); // ← 型を明示
+          ackShownIds = msgs.map((m: Message) => m.id);
           await persistTempSelfWrite();
           new Notice(`読み込み完了: ${file.name}`);
           await scrollToBottom(true);
@@ -296,7 +278,7 @@
     try {
       let folder = resolveExportFolder();
       if (!folder) {
-        const ok = await ensureExportFolderExists({ showNotice: true }); // ← ローカル実装
+        const ok = await ensureExportFolderExists({ showNotice: true });
         if (ok) folder = resolveExportFolder();
       }
       if (!folder) throw new Error("出力先フォルダが見つかりません。");
@@ -306,7 +288,6 @@
       session = createSession(plugin.app.vault.getName(), (plugin as any).manifest?.version ?? "v1");
       ackShownIds = [];
 
-      // 既存 tempFile が無ければ作る／あれば上書き保存
       if (!tempFile) {
         await ensureTempFile();
       }
@@ -324,11 +305,11 @@
     }
   };
 
-   api.refreshLog = async () => {                 // ★ 追加
+   api.refreshLog = async () => {
    try {
      if (!tempFile) { new Notice("一時ログが見つかりません。"); return; }
      const loaded = await loadSessionFromTempFile(plugin.app, tempFile);
-     session = { ...loaded, messages: [...loaded.messages] }; // 参照更新で描画
+     session = { ...loaded, messages: [...loaded.messages] };
      ackShownIds = loaded.messages.map((m: Message) => m.id);
      new Notice("ログを更新しました。");
      await scrollToBottom(true);
@@ -338,6 +319,17 @@
      menuOpen = false;
    }
  };
+
+  let composerPlacementDesktop: ComposerPlacement = plugin.settings.composerPlacementDesktop;
+  let composerPlacementMobile: ComposerPlacement = plugin.settings.composerPlacementMobile;
+
+  $: placement = isMobile ? composerPlacementMobile : composerPlacementDesktop;
+
+  export function onSettingsChanged() {
+    composerPlacementDesktop = plugin.settings.composerPlacementDesktop;
+    composerPlacementMobile = plugin.settings.composerPlacementMobile;
+  }
+
 </script>
 
 {#if !ready}
@@ -354,17 +346,41 @@
       </div>
     </div>
 
-    <div class="body">
-      <Timeline messages={session.messages} bind:containerEl={timelineEl} on:edited={onTimelineEdited} {ackShownIds} />
-    </div>
-
+  {#if placement === "top"}
     <Composer
       bind:this={composerRef}
-      isMobile={false}
+      isMobile={isMobile}
       pcEnterSendDisabled={plugin.settings.pcEnterSendDisabled}
       mobileEnterSendEnabled={plugin.settings.mobileEnterSendEnabled}
       on:submit={(e) => onSubmit(e.detail)}
     />
+
+    <div class="body">
+      <Timeline
+        messages={session.messages}
+        bind:containerEl={timelineEl}
+        on:edited={onTimelineEdited}
+        {ackShownIds}
+      />
+    </div>
+  {:else}
+    <div class="body">
+      <Timeline
+        messages={session.messages}
+        bind:containerEl={timelineEl}
+        on:edited={onTimelineEdited}
+        {ackShownIds}
+      />
+    </div>
+
+    <Composer
+      bind:this={composerRef}
+      isMobile={isMobile}
+      pcEnterSendDisabled={plugin.settings.pcEnterSendDisabled}
+      mobileEnterSendEnabled={plugin.settings.mobileEnterSendEnabled}
+      on:submit={(e) => onSubmit(e.detail)}
+    />
+  {/if}
 
     <HamburgerMenu
     bind:open={menuOpen}
@@ -414,10 +430,15 @@
     display: flex;       /* 子を 100% に広げやすくする */
   }
 
-    :global(.workspace-leaf-content[data-type="nods-view"] > .view-content) {
-    /* 上 右 下 左 */
+  :global(.workspace-leaf-content[data-type="nods-view"] > .view-content) {
+    /* デスクトップ */
     padding: 0 0 max(var(--safe-area-inset-bottom, 0px), var(--size-4-8)) 0;
-    }
+  }
+
+  /* ★ Obsidian Mobile 専用（body.is-mobile が付く） */
+  :global(body.is-mobile .workspace-leaf-content[data-type="nods-view"] > .view-content) {
+    padding: 0 0 var(--safe-area-inset-bottom) 0;
+  }
 
   /* 任意：Composer はそのまま下に */
 </style>

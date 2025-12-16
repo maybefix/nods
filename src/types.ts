@@ -1,5 +1,7 @@
 // 共通型とユーティリティ
 
+export type ComposerPlacement = "top" | "bottom";
+
 export interface Message {
     id: string;          // uuid
     ts: string;          // ISO 8601

@@ -12,7 +12,7 @@ import {
 import NodsView from "./ui/NodsView.svelte";
 
 // ★ types はここから扱う（io/temp には無い前提）
-import { createSession, type Session } from "./types";
+import { createSession, type Session, type ComposerPlacement } from "./types";
 
 // io/temp は「ファイルI/O」専用として利用
 import { loadSessionFromTempFile } from "./io/temp";
@@ -25,6 +25,8 @@ export interface NodsSettings {
   backupGenerations: number;  // 将来用（未使用でもOK）
   pcEnterSendDisabled: boolean;
   mobileEnterSendEnabled: boolean;
+  composerPlacementDesktop: ComposerPlacement;
+  composerPlacementMobile: ComposerPlacement;
 }
 
 const DEFAULT_SETTINGS: NodsSettings = {
@@ -32,10 +34,23 @@ const DEFAULT_SETTINGS: NodsSettings = {
   backupGenerations: 5,
   pcEnterSendDisabled: false,
   mobileEnterSendEnabled: false,
+  composerPlacementDesktop: "top",
+  composerPlacementMobile: "bottom",
 };
 
 export default class NodsPlugin extends Plugin {
   settings!: NodsSettings;
+
+  refreshAllViews() {
+    const leaves = this.app.workspace.getLeavesOfType(VIEW_TYPE_NODS);
+
+    leaves.forEach((leaf) => {
+      const view: any = leaf.view;
+      if (typeof view?.onSettingsChanged === "function") {
+        view.onSettingsChanged();
+      }
+    });
+}
 
   async onload(): Promise<void> {
     await this.loadSettings();
@@ -123,6 +138,10 @@ class NodsItemView extends ItemView {
       this.comp?.focusComposer?.();
     } catch {}
   }
+  onSettingsChanged() {
+    // Svelte 側に通知
+    this.comp?.onSettingsChanged?.();
+  }
 
   async onOpen(): Promise<void> {
     const container = this.contentEl;
@@ -149,6 +168,7 @@ class NodsItemView extends ItemView {
     try { (this.comp as any)?.$destroy?.(); } catch {}
     this.comp = null;
   }
+  
 }
 
 /** main.ts 側で使う：nods-temp.md を「読む or 作る」 */
@@ -242,5 +262,33 @@ class NodsSettingTab extends PluginSettingTab {
           await this.plugin.saveSettings();
         })
     );
+
+    new Setting(containerEl)
+      .setName("入力欄の位置（デスクトップ）")
+      .setDesc("Nods の入力欄を上に置くか下に置くか。")
+      .addDropdown((dd) => {
+        dd.addOption("top", "上")
+          .addOption("bottom", "下")
+          .setValue(this.plugin.settings.composerPlacementDesktop)
+          .onChange(async (v) => {
+            this.plugin.settings.composerPlacementDesktop = v as any;
+            await this.plugin.saveSettings();
+            this.plugin.refreshAllViews(); // ★ 追加
+          });
+      });
+
+    new Setting(containerEl)
+      .setName("入力欄の位置（モバイル）")
+      .setDesc("Nods の入力欄を上に置くか下に置くか。")
+      .addDropdown((dd) => {
+        dd.addOption("top", "上")
+          .addOption("bottom", "下")
+          .setValue(this.plugin.settings.composerPlacementMobile)
+          .onChange(async (v) => {
+            this.plugin.settings.composerPlacementMobile = v as any;
+            await this.plugin.saveSettings();
+            this.plugin.refreshAllViews(); // ★ 追加
+          });
+      });
   }
 }

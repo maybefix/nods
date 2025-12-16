@@ -1,14 +1,14 @@
 {
-	"name": "obsidian-sample-plugin",
-	"version": "1.0.0",
-	"description": "This is a sample plugin for Obsidian (https://obsidian.md)",
+	"name": "obsidian-nods",
+	"version": "1.0.1",
+	"description": "plugin for Self-chat like ChatGPT or X (formerly Twitter) in Obsidian",
 	"main": "main.js",
 	"scripts": {
 		"dev": "node esbuild.config.mjs",
 		"build": "node -e \"process.env.BUILD='production';import('./esbuild.config.mjs')\""
 	},
 	"keywords": [],
-	"author": "",
+	"author": "MaybeFix",
 	"license": "MIT",
 	"devDependencies": {
 		"@types/node": "^16.11.6",

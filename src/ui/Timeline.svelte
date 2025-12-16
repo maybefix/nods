@@ -101,7 +101,7 @@
     <div class="empty">まだメモはありません。</div>
   {:else}
     {#each messages as m, i (m.id)}
-      <div class="row">
+      <div class="row self">
         <!-- svelte-ignore a11y-no-static-element-interactions -->
         <div
           class="bubble"
@@ -130,11 +130,13 @@
             >⧉</button>
           {/if}
         </div>
-
-        {#if ackSet.has(m.id)}
-          <div class="ack">うん。</div>
-        {/if}
       </div>
+
+      {#if ackSet.has(m.id)}
+        <div class="row ackrow">
+          <div class="ack">うん。</div>
+        </div>
+      {/if}
     {/each}
   {/if}
 </div>
@@ -154,11 +156,35 @@
     padding: 12px 12px 8px;
     display: flex;
     flex-direction: column;
-    gap: 14px;
+    gap: 12px;
   }
 
   .empty { opacity: 0.7; font-size: 16px; padding: 8px 0; }
-  .row { display: block; }
+  .row {
+    width: 100%;
+  }
+
+  /* 自分の発言行：右寄せ */
+  .row.self {
+    display: flex;
+    justify-content: flex-end;
+  }
+
+  /* ack 行：左寄せ */
+  .row.ackrow {
+    display: flex;
+    justify-content: flex-start;
+  }
+
+  /* バブルは中身に合わせつつ最大幅を制限 */
+  .row.self .bubble {
+    max-width: 100%;
+  }
+
+  /* もし fit-content が環境で怪しければこっちでもOK
+  .row.self .bubble { width: auto; max-width: min(92%, 42rem); }
+  */
+
 
   .bubble {
     width: 100%;
@@ -172,7 +198,6 @@
     box-shadow: 0 1px 0 rgba(0,0,0,.06);
     white-space: pre-line;
     word-break: break-word;
-    margin-bottom: 10px;
   }
 
   .bubble .copy {
