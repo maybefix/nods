@@ -146,15 +146,22 @@
       }
     }
 
-    if (!refreshed && tempFile) {
-      try {
-        const loaded = await loadSessionFromTempFile(plugin.app, tempFile);
-        session = { ...loaded, messages: [...loaded.messages] };
-        ackShownIds = loaded.messages.map(m => m.id);
-      } catch (err) {
-        new Notice("一時ログの読み込みに失敗: " + String(err));
-      }
+  if (!refreshed && tempFile) {
+    try {
+      const loaded = await loadSessionFromTempFile(
+        plugin.app,
+        tempFile,
+        () => createSession(
+          plugin.app.vault.getName(),
+          plugin.manifest.version
+        )
+      );
+      session = { ...loaded, messages: [...loaded.messages] };
+      ackShownIds = loaded.messages.map(m => m.id);
+    } catch (err) {
+      new Notice("一時ログの読み込みに失敗: " + String(err));
     }
+  }
   
     await tick();
     await scrollToBottom(false);
@@ -305,20 +312,29 @@
     }
   };
 
-   api.refreshLog = async () => {
-   try {
-     if (!tempFile) { new Notice("一時ログが見つかりません。"); return; }
-     const loaded = await loadSessionFromTempFile(plugin.app, tempFile);
-     session = { ...loaded, messages: [...loaded.messages] };
-     ackShownIds = loaded.messages.map((m: Message) => m.id);
-     new Notice("ログを更新しました。");
-     await scrollToBottom(true);
-   } catch (e) {
-     new Notice("ログの更新に失敗: " + String(e));
-   } finally {
-     menuOpen = false;
-   }
- };
+  api.refreshLog = async () => {
+    try {
+      if (!tempFile) { new Notice("一時ログが見つかりません。"); return; }
+
+      const loaded = await loadSessionFromTempFile(
+        plugin.app,
+        tempFile,
+        () => createSession(
+          plugin.app.vault.getName(),
+          plugin.manifest.version
+        )
+      );
+
+      session = { ...loaded, messages: [...loaded.messages] };
+      ackShownIds = loaded.messages.map((m: Message) => m.id);
+      new Notice("ログを更新しました。");
+      await scrollToBottom(true);
+    } catch (e) {
+      new Notice("ログの更新に失敗: " + String(e));
+    } finally {
+      menuOpen = false;
+    }
+  };
 
   let composerPlacementDesktop: ComposerPlacement = plugin.settings.composerPlacementDesktop;
   let composerPlacementMobile: ComposerPlacement = plugin.settings.composerPlacementMobile;

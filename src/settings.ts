@@ -16,7 +16,7 @@ export interface NodsSettings {
 }
 
 export const DEFAULT_SETTINGS: NodsSettings = {
-    exportFolder: ".nods/logs",
+    exportFolder: "logs",
     pcEnterSendDisabled: false,
     mobileEnterSendEnabled: false,
     backupGenerations: 1,

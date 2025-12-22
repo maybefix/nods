@@ -177,7 +177,8 @@ async function ensureTempFromMain(
   manifestVersion: string,
   settings: NodsSettings
 ): Promise<{ session: Session; tempFile: TFile }> {
-  const folderPath = normalizePath(settings.exportFolder || ".nods/logs");
+  const raw = (settings.exportFolder ?? "").trim();
+  const folderPath = normalizePath((raw || ".nods/logs").replace(/^\/+/, ""));
   let folder = app.vault.getAbstractFileByPath(folderPath);
 
   if (!folder) {
@@ -192,26 +193,47 @@ async function ensureTempFromMain(
   const existing = app.vault.getAbstractFileByPath(tempPath);
 
   if (existing instanceof TFile) {
-    const sess = await loadSessionFromTempFile(app, existing);
+    const sess = await loadSessionFromTempFile(
+      app,
+      existing,
+      () => createSession(app.vault.getName(), manifestVersion)
+    );
+
     return { session: sess, tempFile: existing };
   } else {
-    const sess = createSession(app.vault.getName(), manifestVersion); // ← io/temp に依存せず自前で空を作る
+    const sess = createSession(app.vault.getName(), manifestVersion);
     const tf = await app.vault.create(tempPath, "");
     return { session: sess, tempFile: tf };
   }
 }
 
-/** a/b/c のような階層フォルダも作成する */
 async function ensureFolders(app: App, path: string): Promise<void> {
-  const parts = path.split("/").filter(Boolean);
-  let cur = "";
-  for (const p of parts) {
-    cur = cur ? `${cur}/${p}` : p;
-    const af = app.vault.getAbstractFileByPath(cur);
-    if (!af) {
-      await app.vault.createFolder(cur);
+    const parts = normalizePath(path).split("/").filter(Boolean);
+    let cur = "";
+
+    for (const p of parts) {
+        cur = cur ? `${cur}/${p}` : p;
+
+        const existing = app.vault.getAbstractFileByPath(cur);
+        if (existing) {
+            if (existing instanceof TFolder) continue;
+            throw new Error(`Path exists but is not a folder: ${cur}`);
+        }
+
+        try {
+            await app.vault.createFolder(cur);
+        } catch (e) {
+            const msg = String(e);
+            if (!msg.includes("Folder already exists")) {
+                throw new Error(`Failed to create folder: ${cur} (${msg})`);
+            }
+        }
+
+        const after = app.vault.getAbstractFileByPath(cur);
+        if (!(after instanceof TFolder)) {
+            throw new Error(`Export folder is not a folder: ${cur}`);
+        }
     }
-  }
 }
 
 /** 設定タブ */
