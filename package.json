@@ -1,6 +1,6 @@
 {
 	"name": "obsidian-nods",
-	"version": "1.0.1",
+	"version": "1.0.2",
 	"description": "plugin for Self-chat like ChatGPT or X (formerly Twitter) in Obsidian",
 	"main": "main.js",
 	"scripts": {
