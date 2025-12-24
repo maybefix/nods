@@ -4,8 +4,8 @@
   import Composer from "./Composer.svelte";
   import HamburgerMenu from "./HamburgerMenu.svelte";
   void [Welcome, Timeline, Composer, HamburgerMenu];
-  import { tick } from "svelte"; 
-  import { RefreshCw } from 'lucide-svelte';
+  import { tick } from "svelte";
+  import { RefreshCw } from "lucide-svelte";
 
   import type NodsPlugin from "../main";
   import { Platform, Notice, normalizePath, TFile, TFolder } from "obsidian";
@@ -31,6 +31,7 @@
   let menuOpen = false;
   let isMobile =
     Platform.isMobile || Platform.isMobileApp || /Mobi|Android/i.test(navigator.userAgent);
+
   export function focusComposer() {
     composerRef?.focus?.();
   }
@@ -79,17 +80,23 @@
     return af instanceof TFolder ? af : null;
   }
 
-  // ★ plugin.ensureExportFolderExists が無い前提のローカル実装
   async function ensureExportFolderExists(opts?: { showNotice?: boolean }): Promise<boolean> {
     const base = (plugin.settings as any).exportFolder?.trim() || ".nods/logs";
-    const parts = base.split("/").filter(Boolean);
+    const parts = normalizePath(base.replace(/^\/+/, "")).split("/").filter(Boolean);
     let cur = "";
     try {
       for (const p of parts) {
         cur = cur ? `${cur}/${p}` : p;
         const af = plugin.app.vault.getAbstractFileByPath(cur);
-        if (!af) {
+        if (af) {
+          if (af instanceof TFolder) continue;
+          throw new Error(`Path exists but is not a folder: ${cur}`);
+        }
+        try {
           await plugin.app.vault.createFolder(cur);
+        } catch (e) {
+          const msg = String(e);
+          if (!msg.includes("Folder already exists")) throw e;
         }
       }
       return true;
@@ -99,17 +106,34 @@
     }
   }
 
-  async function ensureTempFile() {
-    const folder = resolveExportFolder();
-    if (!folder) return;
+  // ★「作成のみ」して、created を返す
+  async function ensureTempFile(): Promise<{ file: TFile; created: boolean } | null> {
+    let folder = resolveExportFolder();
+    if (!folder) {
+      const ok = await ensureExportFolderExists({ showNotice: true });
+      if (!ok) return null;
+      folder = resolveExportFolder();
+    }
+    if (!folder) return null;
+
     const path = normalizePath(`${folder.path}/${TEMP_NAME}`);
     const af = plugin.app.vault.getAbstractFileByPath(path);
+
     if (af instanceof TFile) {
-      tempFile = af;
-      return;
+      return { file: af, created: false };
     }
-    tempFile = await plugin.app.vault.create(path, "");
-    await saveSessionToTempFile(plugin.app, tempFile, session);
+
+    try {
+      const createdFile = await plugin.app.vault.create(path, "");
+      return { file: createdFile, created: true };
+    } catch (e) {
+      const msg = String(e);
+      if (msg.includes("already exists")) {
+        const after = plugin.app.vault.getAbstractFileByPath(path);
+        if (after instanceof TFile) return { file: after, created: false };
+      }
+      throw e;
+    }
   }
 
   // ========== 「うん。」遅延 ==========
@@ -118,11 +142,10 @@
     if (!last) return;
     const id = last.id;
     const delay = 1000 + Math.floor(Math.random() * 2000);
-    setTimeout(async() => {
+    setTimeout(async () => {
       if (!ackShownIds.includes(id)) {
         ackShownIds = [...ackShownIds, id];
-        console.log(ackShownIds)
-        await scrollToBottom(true); 
+        await scrollToBottom(true);
       }
     }, delay);
   }
@@ -142,27 +165,33 @@
       try {
         await api.refreshLog();
         refreshed = true;
-      } catch {
+      } catch {}
+    }
+
+    // refreshLog が何もしなかった場合だけ、ここで読む
+    if (!refreshed) {
+      try {
+        // tempFile が不正な可能性があるので、無ければ作る
+        if (!tempFile) {
+          const r = await ensureTempFile();
+          if (!r) throw new Error("一時ログが作成できません。");
+          tempFile = r.file;
+          if (r.created) {
+            await saveSessionToTempFile(plugin.app, tempFile, session);
+          }
+          attachWatcher();
+        }
+
+        const loaded = await loadSessionFromTempFile(plugin.app, tempFile);
+        if (loaded) {
+          session = { ...loaded, messages: [...loaded.messages] };
+          ackShownIds = loaded.messages.map(m => m.id);
+        }
+      } catch (err) {
+        new Notice("一時ログの読み込みに失敗: " + String(err));
       }
     }
 
-  if (!refreshed && tempFile) {
-    try {
-      const loaded = await loadSessionFromTempFile(
-        plugin.app,
-        tempFile,
-        () => createSession(
-          plugin.app.vault.getName(),
-          plugin.manifest.version
-        )
-      );
-      session = { ...loaded, messages: [...loaded.messages] };
-      ackShownIds = loaded.messages.map(m => m.id);
-    } catch (err) {
-      new Notice("一時ログの読み込みに失敗: " + String(err));
-    }
-  }
-  
     await tick();
     await scrollToBottom(false);
   }
@@ -171,7 +200,7 @@
   async function onSubmit(text: string) {
     try {
       pushMessage(session, text);
-      session = { ...session, messages: [...session.messages] }; // reactivity
+      session = { ...session, messages: [...session.messages] };
       scheduleAckForLast();
       await persistTempSelfWrite();
       await scrollToBottom(true);
@@ -182,17 +211,17 @@
   }
 
   function splitMarkdownToMessages(txt: string): Message[] {
-      const blocks = txt
-          .split(/\r?\n{2,}/)
-          .map(s => s.replace(/\s+$/g, ""))
-          .filter(s => s.length > 0);
+    const blocks = txt
+      .split(/\r?\n{2,}/)
+      .map(s => s.replace(/\s+$/g, ""))
+      .filter(s => s.length > 0);
 
-      return blocks.map<Message>((b) => ({
-          id: (globalThis.crypto?.randomUUID?.() ?? String(Math.random())),
-          ts: new Date().toISOString(),
-          text: b,
-          reply: "うん。" as const,
-      }));
+    return blocks.map<Message>((b) => ({
+      id: (globalThis.crypto?.randomUUID?.() ?? String(Math.random())),
+      ts: new Date().toISOString(),
+      text: b,
+      reply: "うん。" as const,
+    }));
   }
 
   function onTimelineEdited(e: CustomEvent<EditPayload>) {
@@ -212,24 +241,24 @@
         if (timelineEl) timelineEl.scrollTop = timelineEl.scrollHeight;
       })
       .catch(() => {});
-}
+  }
 
-    async function scrollToBottom(smooth = true) {
-      await tick();
-      await tick();
-      const el = timelineEl;
-      if (!el) return;
-      requestAnimationFrame(() => {
-        try {
-          el.scrollTo({
-            top: el.scrollHeight,
-            behavior: smooth ? "smooth" : "auto",
-          });
-        } catch {
-          el.scrollTop = el.scrollHeight;
-        }
-      });
-    }
+  async function scrollToBottom(smooth = true) {
+    await tick();
+    await tick();
+    const el = timelineEl;
+    if (!el) return;
+    requestAnimationFrame(() => {
+      try {
+        el.scrollTo({
+          top: el.scrollHeight,
+          behavior: smooth ? "smooth" : "auto",
+        });
+      } catch {
+        el.scrollTop = el.scrollHeight;
+      }
+    });
+  }
 
   function doExport() { api.exportLog?.(); }
   function doLoad() { api.loadFile?.(); }
@@ -295,10 +324,14 @@
       session = createSession(plugin.app.vault.getName(), (plugin as any).manifest?.version ?? "v1");
       ackShownIds = [];
 
-      if (!tempFile) {
-        await ensureTempFile();
-      }
-      if (tempFile) {
+      const r = await ensureTempFile();
+      if (!r) throw new Error("一時ログが作成できません。");
+      tempFile = r.file;
+
+      // ★初回作成時のみ書き込む（更新で空にしない）
+      if (r.created) {
+        await saveSessionToTempFile(plugin.app, tempFile, session);
+      } else {
         await saveSessionToTempFile(plugin.app, tempFile, session);
       }
 
@@ -314,21 +347,29 @@
 
   api.refreshLog = async () => {
     try {
-      if (!tempFile) { new Notice("一時ログが見つかりません。"); return; }
+      let tf = tempFile;
+      if (!tf) {
+        const r = await ensureTempFile();
+        if (!r) { new Notice("一時ログが見つかりません。"); return; }
+        tf = r.file;
+        tempFile = tf;
 
-      const loaded = await loadSessionFromTempFile(
-        plugin.app,
-        tempFile,
-        () => createSession(
-          plugin.app.vault.getName(),
-          plugin.manifest.version
-        )
-      );
+        // ★初回のみ保存
+        if (r.created) {
+          await saveSessionToTempFile(plugin.app, tempFile, session);
+        }
+        attachWatcher();
+      }
 
-      session = { ...loaded, messages: [...loaded.messages] };
-      ackShownIds = loaded.messages.map((m: Message) => m.id);
-      new Notice("ログを更新しました。");
-      await scrollToBottom(true);
+      const loaded = await loadSessionFromTempFile(plugin.app, tf);
+      if (loaded) {
+        session = { ...loaded, messages: [...loaded.messages] };
+        ackShownIds = loaded.messages.map((m: Message) => m.id);
+        new Notice("ログを更新しました。");
+        await scrollToBottom(true);
+      } else {
+        // 初回空などは何もしない
+      }
     } catch (e) {
       new Notice("ログの更新に失敗: " + String(e));
     } finally {
@@ -345,7 +386,6 @@
     composerPlacementDesktop = plugin.settings.composerPlacementDesktop;
     composerPlacementMobile = plugin.settings.composerPlacementMobile;
   }
-
 </script>
 
 {#if !ready}
@@ -362,49 +402,49 @@
       </div>
     </div>
 
-  {#if placement === "top"}
-    <Composer
-      bind:this={composerRef}
-      isMobile={isMobile}
-      pcEnterSendDisabled={plugin.settings.pcEnterSendDisabled}
-      mobileEnterSendEnabled={plugin.settings.mobileEnterSendEnabled}
-      on:submit={(e) => onSubmit(e.detail)}
-    />
-
-    <div class="body">
-      <Timeline
-        messages={session.messages}
-        bind:containerEl={timelineEl}
-        on:edited={onTimelineEdited}
-        {ackShownIds}
+    {#if placement === "top"}
+      <Composer
+        bind:this={composerRef}
+        isMobile={isMobile}
+        pcEnterSendDisabled={plugin.settings.pcEnterSendDisabled}
+        mobileEnterSendEnabled={plugin.settings.mobileEnterSendEnabled}
+        on:submit={(e) => onSubmit(e.detail)}
       />
-    </div>
-  {:else}
-    <div class="body">
-      <Timeline
-        messages={session.messages}
-        bind:containerEl={timelineEl}
-        on:edited={onTimelineEdited}
-        {ackShownIds}
-      />
-    </div>
 
-    <Composer
-      bind:this={composerRef}
-      isMobile={isMobile}
-      pcEnterSendDisabled={plugin.settings.pcEnterSendDisabled}
-      mobileEnterSendEnabled={plugin.settings.mobileEnterSendEnabled}
-      on:submit={(e) => onSubmit(e.detail)}
-    />
-  {/if}
+      <div class="body">
+        <Timeline
+          messages={session.messages}
+          bind:containerEl={timelineEl}
+          on:edited={onTimelineEdited}
+          {ackShownIds}
+        />
+      </div>
+    {:else}
+      <div class="body">
+        <Timeline
+          messages={session.messages}
+          bind:containerEl={timelineEl}
+          on:edited={onTimelineEdited}
+          {ackShownIds}
+        />
+      </div>
+
+      <Composer
+        bind:this={composerRef}
+        isMobile={isMobile}
+        pcEnterSendDisabled={plugin.settings.pcEnterSendDisabled}
+        mobileEnterSendEnabled={plugin.settings.mobileEnterSendEnabled}
+        on:submit={(e) => onSubmit(e.detail)}
+      />
+    {/if}
 
     <HamburgerMenu
-    bind:open={menuOpen}
-    on:export={doExport}
-    on:load={doLoad}
-    on:clear={doClear}
-    on:refresh={doRefresh}
-    on:close={() => (menuOpen = false)}
+      bind:open={menuOpen}
+      on:export={doExport}
+      on:load={doLoad}
+      on:clear={doClear}
+      on:refresh={doRefresh}
+      on:close={() => (menuOpen = false)}
     />
   </div>
 {/if}
@@ -439,22 +479,17 @@
     font-size: 16px; line-height: 1;
   }
 
-  /* ★ ここが大事：タイムライン領域を親側で確保 */
   .body {
     flex: 1 1 auto;
-    min-height: 0;       /* ← これがないとスクロール領域が潰れる */
-    display: flex;       /* 子を 100% に広げやすくする */
+    min-height: 0;
+    display: flex;
   }
 
   :global(.workspace-leaf-content[data-type="nods-view"] > .view-content) {
-    /* デスクトップ */
     padding: 0 0 max(var(--safe-area-inset-bottom, 0px), var(--size-4-8)) 0;
   }
 
-  /* ★ Obsidian Mobile 専用（body.is-mobile が付く） */
   :global(body.is-mobile .workspace-leaf-content[data-type="nods-view"] > .view-content) {
     padding: 0 0 var(--safe-area-inset-bottom) 0;
   }
-
-  /* 任意：Composer はそのまま下に */
 </style>

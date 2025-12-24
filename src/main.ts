@@ -177,8 +177,8 @@ async function ensureTempFromMain(
   manifestVersion: string,
   settings: NodsSettings
 ): Promise<{ session: Session; tempFile: TFile }> {
-  const raw = (settings.exportFolder ?? "").trim();
-  const folderPath = normalizePath((raw || ".nods/logs").replace(/^\/+/, ""));
+  const raw = (settings.exportFolder || ".nods/logs").trim();
+  const folderPath = normalizePath(raw.replace(/^\/+/, ""));
   let folder = app.vault.getAbstractFileByPath(folderPath);
 
   if (!folder) {
@@ -189,51 +189,73 @@ async function ensureTempFromMain(
     throw new Error("Export folder is not a folder: " + folderPath);
   }
 
+  // 更新後に exportFolder が変わっても、旧 temp があればそちらを優先する
+  const legacyCandidates = [
+    normalizePath(`.nods/logs/nods-temp.md`),
+    normalizePath(`.nods/nods-temp.md`),
+    normalizePath(`nods-temp.md`),
+  ];
+  for (const p of legacyCandidates) {
+    const af = app.vault.getAbstractFileByPath(p);
+    if (af instanceof TFile) {
+      const loaded = await loadSessionFromTempFile(app, af);
+      const sess = loaded ?? createSession(app.vault.getName(), manifestVersion);
+      return { session: sess, tempFile: af };
+    }
+  }
+
   const tempPath = normalizePath(`${folder.path}/nods-temp.md`);
   const existing = app.vault.getAbstractFileByPath(tempPath);
 
   if (existing instanceof TFile) {
-    const sess = await loadSessionFromTempFile(
-      app,
-      existing,
-      () => createSession(app.vault.getName(), manifestVersion)
-    );
-
+    const loaded = await loadSessionFromTempFile(app, existing);
+    const sess = loaded ?? createSession(app.vault.getName(), manifestVersion);
     return { session: sess, tempFile: existing };
-  } else {
-    const sess = createSession(app.vault.getName(), manifestVersion);
+  }
+
+  try {
     const tf = await app.vault.create(tempPath, "");
+    const sess = createSession(app.vault.getName(), manifestVersion);
     return { session: sess, tempFile: tf };
+  } catch (e) {
+    const msg = String(e);
+    if (msg.includes("File already exists")) {
+      const after = app.vault.getAbstractFileByPath(tempPath);
+      if (after instanceof TFile) {
+        const loaded = await loadSessionFromTempFile(app, after);
+        const sess = loaded ?? createSession(app.vault.getName(), manifestVersion);
+        return { session: sess, tempFile: after };
+      }
+    }
+    throw e;
   }
 }
 
 async function ensureFolders(app: App, path: string): Promise<void> {
-    const parts = normalizePath(path).split("/").filter(Boolean);
-    let cur = "";
+  const parts = normalizePath(path.replace(/^\/+/, "")).split("/").filter(Boolean);
+  let cur = "";
 
-    for (const p of parts) {
-        cur = cur ? `${cur}/${p}` : p;
+  for (const p of parts) {
+    cur = cur ? `${cur}/${p}` : p;
 
-        const existing = app.vault.getAbstractFileByPath(cur);
-        if (existing) {
-            if (existing instanceof TFolder) continue;
-            throw new Error(`Path exists but is not a folder: ${cur}`);
-        }
-
-        try {
-            await app.vault.createFolder(cur);
-        } catch (e) {
-            const msg = String(e);
-            if (!msg.includes("Folder already exists")) {
-                throw new Error(`Failed to create folder: ${cur} (${msg})`);
-            }
-        }
-
-        const after = app.vault.getAbstractFileByPath(cur);
-        if (!(after instanceof TFolder)) {
-            throw new Error(`Export folder is not a folder: ${cur}`);
-        }
+    const af = app.vault.getAbstractFileByPath(cur);
+    if (af) {
+      if (af instanceof TFolder) continue;
+      throw new Error(`Export folder path exists but is a file: ${cur}`);
     }
+
+    try {
+      await app.vault.createFolder(cur);
+    } catch (e) {
+      const msg = String(e);
+      if (!msg.includes("Folder already exists")) throw e;
+    }
+
+    const after = app.vault.getAbstractFileByPath(cur);
+    if (!(after instanceof TFolder)) {
+      throw new Error(`Export folder is not a folder: ${cur}`);
+    }
+  }
 }
 
 /** 設定タブ */
