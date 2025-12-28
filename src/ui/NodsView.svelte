@@ -5,17 +5,18 @@
   import HamburgerMenu from "./HamburgerMenu.svelte";
   void [Welcome, Timeline, Composer, HamburgerMenu];
   import { tick } from "svelte";
-  import { RefreshCw } from "lucide-svelte";
+  import { RefreshCw, MessageSquare } from "lucide-svelte";
 
   import type NodsPlugin from "../main";
   import { Platform, Notice, normalizePath, TFile, TFolder } from "obsidian";
 
-  import { pushMessage, type Session, createSession, type Message, type ComposerPlacement } from "../types";
+  import { pushMessage, type Session, createSession, type Message, type ComposerPlacement, type InputMode } from "../types";
   import { saveSessionToTempFile, loadSessionFromTempFile } from "../io/temp";
   import { exportMarkdown } from "../io/export";
   import { backupSessionMarkdown } from "../io/backup";
   import { TempWatcher } from "../io/watch";
   import { LoadFileModal } from "../modals/LoadFileModal";
+  import { NodsInputModal } from "../modals/InputModal";
 
   export let plugin: NodsPlugin;
   export let initialSession: Session;
@@ -31,6 +32,7 @@
   let menuOpen = false;
   let isMobile =
     Platform.isMobile || Platform.isMobileApp || /Mobi|Android/i.test(navigator.userAgent);
+  let inputMode: InputMode = plugin.settings.inputMode ?? "composer";
 
   export function focusComposer() {
     composerRef?.focus?.();
@@ -385,6 +387,17 @@
   export function onSettingsChanged() {
     composerPlacementDesktop = plugin.settings.composerPlacementDesktop;
     composerPlacementMobile = plugin.settings.composerPlacementMobile;
+    inputMode = plugin.settings.inputMode ?? "composer";
+  }
+
+  export function handleExternalSubmit(text: string) {
+    onSubmit(text);
+  }
+
+  function openInputModal() {
+    new NodsInputModal(plugin.app, (text) => {
+        onSubmit(text);
+    }).open();
   }
 </script>
 
@@ -399,17 +412,28 @@
         <button class="refresh" on:click={doRefresh} aria-label="更新"><RefreshCw /></button>
       </div>
       <div class="tools">
+        {#if inputMode === "modal"}
+          <button
+            class="nods-input-button nods-input-button-header"
+            aria-label="新しいメモ"
+            on:click={openInputModal}
+          >
+            <MessageSquare size={16}/>
+          </button>
+        {/if}
       </div>
     </div>
 
     {#if placement === "top"}
-      <Composer
-        bind:this={composerRef}
-        isMobile={isMobile}
-        pcEnterSendDisabled={plugin.settings.pcEnterSendDisabled}
-        mobileEnterSendEnabled={plugin.settings.mobileEnterSendEnabled}
-        on:submit={(e) => onSubmit(e.detail)}
-      />
+      {#if inputMode === "composer"}
+        <Composer
+          bind:this={composerRef}
+          isMobile={isMobile}
+          pcEnterSendDisabled={plugin.settings.pcEnterSendDisabled}
+          mobileEnterSendEnabled={plugin.settings.mobileEnterSendEnabled}
+          on:submit={(e) => onSubmit(e.detail)}
+        />
+      {/if}
 
       <div class="body">
         <Timeline
@@ -419,6 +443,16 @@
           {ackShownIds}
         />
       </div>
+
+      {#if inputMode === "modal"}
+          <button
+            class="nods-input-button nods-input-button-fab"
+            aria-label="新しいメモ"
+            on:click={openInputModal}
+          >
+            <MessageSquare />
+          </button>
+      {/if}
     {:else}
       <div class="body">
         <Timeline
@@ -429,13 +463,25 @@
         />
       </div>
 
-      <Composer
-        bind:this={composerRef}
-        isMobile={isMobile}
-        pcEnterSendDisabled={plugin.settings.pcEnterSendDisabled}
-        mobileEnterSendEnabled={plugin.settings.mobileEnterSendEnabled}
-        on:submit={(e) => onSubmit(e.detail)}
-      />
+      {#if inputMode === "composer"}
+        <Composer
+          bind:this={composerRef}
+          isMobile={isMobile}
+          pcEnterSendDisabled={plugin.settings.pcEnterSendDisabled}
+          mobileEnterSendEnabled={plugin.settings.mobileEnterSendEnabled}
+          on:submit={(e) => onSubmit(e.detail)}
+        />
+      {/if}
+
+      {#if inputMode === "modal"}
+        <button
+          class="nods-input-button nods-input-button-fab"
+          aria-label="新しいメモ"
+          on:click={openInputModal}
+        >
+          <MessageSquare />
+        </button>
+      {/if}
     {/if}
 
     <HamburgerMenu
@@ -478,6 +524,42 @@
     background: var(--background-secondary);
     font-size: 16px; line-height: 1;
   }
+  .tools {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+  }
+
+  .nods-input-button-header {
+    width: 30px;
+    height: 30px;
+    border-radius: 999px;
+    border: 1px solid var(--background-modifier-border);
+    background: var(--interactive-accent);
+    color: var(--text-on-accent, white);
+    line-height: 1;
+    padding: 0;
+    cursor: pointer;
+  }
+
+  .nods-input-button-fab {
+    border: none;
+    cursor: pointer;
+    position: fixed;
+    right: 30px;
+    bottom: calc(50px + var(--safe-area-inset-bottom, 0px));
+    width: 55px;
+    height: 40px;
+    border-radius: 9px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.25);
+    background: var(--interactive-accent);
+    color: var(--text-on-accent, white);
+    z-index: 1000;
+    font-size: 20px;
+  }
 
   .body {
     flex: 1 1 auto;
@@ -491,5 +573,12 @@
 
   :global(body.is-mobile .workspace-leaf-content[data-type="nods-view"] > .view-content) {
     padding: 0 0 var(--safe-area-inset-bottom) 0;
+  }
+
+  :global(body:not(.is-phone)) .nods-input-button-header {
+    display: none;
+  }
+  :global(body.is-phone) .nods-input-button-fab {
+    display: none;
   }
 </style>

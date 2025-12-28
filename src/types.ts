@@ -1,6 +1,7 @@
 // 共通型とユーティリティ
 
 export type ComposerPlacement = "top" | "bottom";
+export type InputMode = "composer" | "modal";
 
 export interface Message {
     id: string;          // uuid

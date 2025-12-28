@@ -8,14 +8,17 @@ import {
   TFolder,
   WorkspaceLeaf,
   normalizePath,
+  Notice
 } from "obsidian";
 import NodsView from "./ui/NodsView.svelte";
 
 // ★ types はここから扱う（io/temp には無い前提）
-import { createSession, type Session, type ComposerPlacement } from "./types";
+import { createSession, type Session, type ComposerPlacement, type InputMode } from "./types";
 
 // io/temp は「ファイルI/O」専用として利用
 import { loadSessionFromTempFile } from "./io/temp";
+
+import { NodsInputModal } from "./modals/InputModal";
 
 export const VIEW_TYPE_NODS = "nods-view";
 export const RIBBON_ICON = "message-square";
@@ -27,6 +30,7 @@ export interface NodsSettings {
   mobileEnterSendEnabled: boolean;
   composerPlacementDesktop: ComposerPlacement;
   composerPlacementMobile: ComposerPlacement;
+  inputMode: InputMode;
 }
 
 const DEFAULT_SETTINGS: NodsSettings = {
@@ -36,6 +40,7 @@ const DEFAULT_SETTINGS: NodsSettings = {
   mobileEnterSendEnabled: false,
   composerPlacementDesktop: "top",
   composerPlacementMobile: "bottom",
+  inputMode: "composer",
 };
 
 export default class NodsPlugin extends Plugin {
@@ -50,7 +55,28 @@ export default class NodsPlugin extends Plugin {
         view.onSettingsChanged();
       }
     });
-}
+  }
+
+  openInputModal() {
+    const app = this.app;
+
+    const submitToView = (text: string) => {
+      const leaf = app.workspace.getLeavesOfType(VIEW_TYPE_NODS)[0];
+      if (!leaf) {
+        new Notice("Nodsビューが開いていません。");
+        return;
+      }
+
+      const view: any = leaf.view;
+      if (typeof view.handleExternalSubmit === "function") {
+        view.handleExternalSubmit(text);
+      } else {
+        new Notice("Nodsビューがまだ準備できていません。");
+      }
+    };
+
+    new NodsInputModal(app, submitToView).open();
+  }
 
   async onload(): Promise<void> {
     await this.loadSettings();
@@ -62,6 +88,12 @@ export default class NodsPlugin extends Plugin {
       id: "open-nods",
       name: "Open Nods",
       callback: () => this.activateView(),
+    });
+
+    this.addCommand({
+      id: "open-input-modal",
+      name: "Open input modal",
+      callback: () => this.openInputModal(),
     });
 
     this.addCommand({
@@ -162,6 +194,11 @@ class NodsItemView extends ItemView {
         initialTempFile: initial.tempFile, // ← 必ず TFile
       },
     });
+  }
+
+  handleExternalSubmit(text: string) {
+    console.log("[NODS] ItemView.handleExternalSubmit", text);
+    this.comp?.handleExternalSubmit?.(text);
   }
 
   async onClose(): Promise<void> {
@@ -332,6 +369,22 @@ class NodsSettingTab extends PluginSettingTab {
             this.plugin.settings.composerPlacementMobile = v as any;
             await this.plugin.saveSettings();
             this.plugin.refreshAllViews(); // ★ 追加
+          });
+      });
+
+    new Setting(containerEl)
+      .setName("入力方法")
+      .setDesc("Nods の入力方法を選びます。")
+      .addDropdown((dd) => {
+          dd.addOption("composer", "ビュー内の入力欄");
+          dd.addOption("modal", "ボタンから入力モーダル");
+
+          dd.setValue(this.plugin.settings.inputMode);
+
+          dd.onChange(async (v) => {
+              this.plugin.settings.inputMode = v as InputMode;
+              await this.plugin.saveSettings();
+              this.plugin.refreshAllViews(); // すでにあるやつを呼ぶ
           });
       });
   }
