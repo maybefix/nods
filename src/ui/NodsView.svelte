@@ -10,7 +10,7 @@
   import type NodsPlugin from "../main";
   import { Platform, Notice, normalizePath, TFile, TFolder } from "obsidian";
 
-  import { pushMessage, type Session, createSession, type Message, type ComposerPlacement, type InputMode } from "../types";
+  import { pushMessage, type Session, createSession, type Message, type ComposerPlacement, type InputMode, extractImageUrls, buildImageAttachments } from "../types";
   import { saveSessionToTempFile, loadSessionFromTempFile } from "../io/temp";
   import { exportMarkdown } from "../io/export";
   import { backupSessionMarkdown } from "../io/backup";
@@ -218,13 +218,23 @@
       .map(s => s.replace(/\s+$/g, ""))
       .filter(s => s.length > 0);
 
-    return blocks.map<Message>((b) => ({
-      id: (globalThis.crypto?.randomUUID?.() ?? String(Math.random())),
-      ts: new Date().toISOString(),
-      text: b,
-      reply: "うん。" as const,
-    }));
+    return blocks.map<Message>((b) => {
+      const urls = extractImageUrls(b);
+      const attachments = buildImageAttachments(urls);
+
+      const base: Message = {
+        id: (globalThis.crypto?.randomUUID?.() ?? String(Math.random())),
+        ts: new Date().toISOString(),
+        text: b,
+        reply: "うん。" as const,
+      };
+      if (attachments.length > 0) {
+        base.attachments = attachments;
+      }
+      return base;
+    });
   }
+
 
   function onTimelineEdited(e: CustomEvent<EditPayload>) {
     const { id, text } = e.detail;
@@ -232,9 +242,21 @@
     const idx = session.messages.findIndex((m) => m.id === id);
     if (idx === -1) return;
 
+    const urls = extractImageUrls(text);
+    const attachments = buildImageAttachments(urls);
+
     session = {
       ...session,
-      messages: session.messages.map((m) => (m.id === id ? { ...m, text } : m)),
+      messages: session.messages.map((m) => {
+        if (m.id !== id) return m;
+        const updated: Message = { ...m, text };
+        if (attachments.length > 0) {
+          updated.attachments = attachments;
+        } else {
+          delete (updated as any).attachments;
+        }
+        return updated;
+      }),
       updatedAt: new Date().toISOString(),
     };
 
@@ -244,6 +266,7 @@
       })
       .catch(() => {});
   }
+
 
   async function scrollToBottom(smooth = true) {
     await tick();
@@ -437,6 +460,7 @@
 
       <div class="body">
         <Timeline
+          {plugin}
           messages={session.messages}
           bind:containerEl={timelineEl}
           on:edited={onTimelineEdited}
@@ -456,6 +480,7 @@
     {:else}
       <div class="body">
         <Timeline
+          {plugin}
           messages={session.messages}
           bind:containerEl={timelineEl}
           on:edited={onTimelineEdited}

@@ -1,7 +1,7 @@
 {
 	"id": "obsidian-nods",
 	"name": "Nods",
-	"version": "1.0.4",
+	"version": "1.0.5",
 	"minAppVersion": "0.15.0",
 	"description": "plugin for Self-chat like ChatGPT or X (formerly Twitter) in Obsidian",
 	"author": "MaybeFix",

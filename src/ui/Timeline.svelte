@@ -1,8 +1,12 @@
 <script lang="ts">
+  import type NodsPlugin from "../main";
   import type { Message } from "../types";
+  import { extractImageUrls, stripImageMarkdown } from "../types";
   import { Notice, setIcon } from "obsidian";
-  import { createEventDispatcher, afterUpdate } from "svelte";
+  import { NodsImageModal } from "../modals/image-modal";
+  import { createEventDispatcher, afterUpdate} from "svelte";
 
+  export let plugin: NodsPlugin;
   export let messages: Message[] = [];
   export let containerEl: HTMLDivElement | null = null;
 
@@ -34,6 +38,19 @@
     } catch {
       new Notice("コピーに失敗しました");
     }
+  }
+
+  // 画像
+  function getImageUrls(m: Message): string[] {
+    if (m.attachments && m.attachments.length > 0) {
+      return m.attachments.map((a) => a.url);
+    }
+    return extractImageUrls(m.text);
+  }
+
+  function openZoom(url: string) {
+    const modal = new NodsImageModal(plugin.app, url);
+    modal.open();
   }
 
   // ====== インライン編集 ======
@@ -120,7 +137,23 @@
             />
             <div class="edit-hint">Shift+Enterで保存 / Enterで改行 / Escでキャンセル</div>
           {:else}
-            <div class="text">{m.text}</div>
+            <div class="text">
+              {stripImageMarkdown(m.text)}
+            </div>
+              {#if getImageUrls(m).length}
+                <div class={`attachments count-${Math.min(getImageUrls(m).length, 4)}`}>
+                  {#each getImageUrls(m).slice(0, 4) as url}
+                    <button
+                      class="attachment"
+                      type="button"
+                      on:click={() => openZoom(url)}
+                      aria-label="画像を拡大"
+                    >
+                      <img src={url} alt="" loading="lazy" />
+                    </button>
+                  {/each}
+                </div>
+              {/if}
             <button
               class="copy"
               use:mountCopyIcon
@@ -140,6 +173,7 @@
     {/each}
   {/if}
 </div>
+
 
 <style>
   :global(body.theme-light) .bubble {
@@ -198,6 +232,58 @@
     box-shadow: 0 1px 0 rgba(0,0,0,.06);
     white-space: pre-line;
     word-break: break-word;
+  }
+
+  .attachments {
+    display: grid;
+    gap: 4px;
+    margin-top: 8px;
+    border-radius: 12px;
+    overflow: hidden;
+  }
+
+  .attachments.count-1 {
+    grid-template-columns: 1fr;
+  }
+
+  .attachments.count-2 {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .attachments.count-3,
+  .attachments.count-4 {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  /* 3枚の場合は1枚目を横長に */
+  .attachments.count-3 .attachment:first-child {
+    grid-column: span 2;
+  }
+
+  .attachment {
+    position: relative;
+    padding: 0;
+    border: none;
+    background: transparent;
+    cursor: zoom-in;
+    /* 必要なら上限だけ付ける */
+    display: block;     /* Obsidianの inline-flex を潰す */
+    width: 100%;
+    height: auto;       /* ここで button の height を上書き */
+    min-height: 0;
+  }
+
+  .attachment img {
+    display: block;
+    width: 100%;
+    height: auto;          /* これに変える */
+    height: auto;
+    object-fit: cover;
+  }
+
+  /* Obsidian の modal-bg を後勝ちで塗りつぶす */
+  .modal-bg:has(+ .modal-container .nods-image-modal) {
+    background-color: rgba(0, 0, 0, 0.75) !important;
   }
 
   .bubble .copy {
