@@ -92,3 +92,36 @@
     box-shadow: 0 0 24px rgba(0, 0, 0, 0.6);
     background: var(--background-primary);
   }
+/* 1. コンテナ側の余白を強制抹消 */
+/* 入力中は、Obsidianが確保している「予約された余白」をゼロにします */
+.is-phone:has(input:focus, textarea:focus) .workspace-drawer-inner {
+    padding-bottom: 0 !important;
+}
+
+/* 2. タブスイッチャーの扱い */
+/* ここがキモです。消すのではなく、absoluteにして「高さ計算」から除外します */
+.is-phone:has(input:focus, textarea:focus) .workspace-drawer-tab-options,
+.is-phone:has(input:focus, textarea:focus) .workspace-drawer-tab-options-list {
+    
+    /* Flow（積み上げ計算）から外す */
+    position: absolute !important;
+    bottom: 0 !important;
+    left: 0 !important;
+    right: 0 !important;
+    z-index: 1000 !important; /* コンテンツより手前に表示 */
+    
+    /* 高さ確保（潰さない） */
+    height: var(--touch-size-l) !important;
+    max-height: var(--touch-size-l) !important;
+    
+    /* 背景色をつける（コンテンツが透けないようにする） */
+    background-color: var(--background-secondary) !important;
+    
+    /* もし「入力中は邪魔だから消したい」なら opacity: 0; pointer-events: none; を追加 */
+    /* 「入力中も切り替えたい」なら、このまま表示させておく */
+}
+
+/* 3. ヘッダーだけは邪魔なので畳む（これはClaudeの案を採用してもOK） */
+.is-phone:has(input:focus, textarea:focus) .workspace-drawer-header {
+    display: none !important;
+}

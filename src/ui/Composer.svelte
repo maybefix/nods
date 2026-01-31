@@ -14,11 +14,13 @@
     let value = "";
     let isComposing = false;
     let ignoreEnterUntil = 0;
+    // isFocused変数はレイアウト制御に使わないため削除しても良いが、状態管理用に残す
+    let isFocused = false; 
 
     export function focus() {
         if (!textarea) return;
         textarea.focus();
-        // 末尾にキャレットを移動（任意）
+        // Set cursor to end
         const len = textarea.value.length;
         textarea.setSelectionRange?.(len, len);
     }
@@ -27,20 +29,33 @@
         const text = value.trim();
         if (!text) return;
         dispatch("submit", text);
+        
+        // 送信後、即座に空にして高さを戻す
         value = "";
-        textarea?.focus();
         resetTextareaHeight();
+        
+        // 【重要】PCならフォーカス維持、モバイルならUX次第だが
+        // チャットアプリ風ならフォーカス維持が基本
+        // requestAnimationFrameを使うとiOSでの再フォーカスが安定する
+        requestAnimationFrame(() => {
+             textarea?.focus();
+        });
+    }
+
+    // 【重要】iOSの「ゴーストクリック/キーボード閉じ」防止用ハンドラ
+    function handleSendPress(e: Event) {
+        // これが最重要。ボタンを押してもテキストボックスからフォーカスを奪わせない
+        e.preventDefault(); 
+        submit();
     }
 
     function onKeydown(e: KeyboardEvent) {
+        // ... (既存のロジックそのまま) ...
         if (e.key === "Enter" && performance.now() < ignoreEnterUntil) {
             e.stopPropagation?.();
             return;
         }
-
-        // ★ハードガード：PC × 「Enter=改行」設定 → Enter単独は絶対に送信しない
         if (!isMobile && pcEnterSendDisabled && e.key === "Enter" && !e.shiftKey) {
-            // 改行はネイティブに任せるので preventDefault はしない
             e.stopPropagation?.();
             return;
         }
@@ -50,6 +65,7 @@
             submit();
         }
     }
+
     function onCompStart() { isComposing = true; }
     function onCompEnd()   { isComposing = false; ignoreEnterUntil = performance.now() + 120;}
 
@@ -62,8 +78,8 @@
 
     function resetTextareaHeight() {
         if (!textarea) return;
-        textarea.value = "";          // 念のため
-        textarea.style.height = "";   // CSSの初期値 / min-height に戻す
+        textarea.value = "";
+        textarea.style.height = "";
         lastMeasured = 0;
     }
 
@@ -83,25 +99,59 @@
         on:input={autoResize}
         on:compositionstart={onCompStart}
         on:compositionend={onCompEnd}
+        on:focus={() => isFocused = true}
+        on:blur={() => isFocused = false}
         autocapitalize="off" autocomplete="off" autocorrect="off" spellcheck="false"
-        enterkeyhint="enter"
         placeholder="話しかけてください"
     />
-    <button type="button" class="send" on:click={submit} aria-label="送信" title="送信" disabled={!value.trim()}>
+    
+    <button 
+        type="button" 
+        class="send" 
+        on:touchstart|nonpassive={handleSendPress} 
+        on:mousedown={handleSendPress}
+        aria-label="送信" 
+        title="送信" 
+        disabled={!value.trim()}
+    >
         <SendHorizontal size={20} strokeWidth={1.75} />
     </button>
 </div>
 
 <style>
+    /* composerFixedクラス（position: fixed切り替え）は、
+       iOSレイアウト崩れの元凶なので削除し、通常のフロー配置にするか、
+       親側で制御することを強く推奨。
+    */
+
     .composer {
         display: grid;
         grid-template-columns: 1fr auto;
         gap: 8px;
         align-items: end;
         padding: 10px;
+        
+        /* ボーダーや背景はOK */
         border-top: 1px solid var(--background-modifier-border);
         background: var(--background-primary);
+
+        /* デフォルトのpadding-bottom設定。
+           iOSの場合、フォーカス時は 0 にしないと二重余白になる。
+           これはCSS側で :has() を使って制御するか、親のクラスで制御する。
+           padding-bottom: calc(10px + env(safe-area-inset-bottom));
+        */
+        padding-bottom: 10px;
     }
+
+    /* もし「キーボードが出ている時は safe-area 分の余白を消したい」なら
+       以下のようにメディアクエリやクラスで制御する 
+    */
+    @media (hover: none) and (pointer: coarse) {
+        /* モバイルでフォーカスされている時（親要素にクラスをつける等の工夫が必要だが、簡易的には以下） */
+        /* Note: Svelteの変数でクラスを付け替える場合 */
+        /* .composer.focused { padding-bottom: 10px; } */
+    }
+
     .composer-textarea {
         resize: none;
         line-height: 1.5;
@@ -110,6 +160,7 @@
         padding: 10px 12px;
         background: var(--background-secondary);
         font-size: 16px;
+        max-height: 200px; /* 自動リサイズの上限 */
     }
     .send {
         width: 40px; height: 40px;
@@ -117,6 +168,12 @@
         border: 1px solid var(--background-modifier-border);
         background: var(--background-secondary);
         font-size: 20px;
+        /* 中央揃えのために flex を追加 */
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 0;
+        cursor: pointer;
     }
-    .send:disabled { opacity: .5; }
+    .send:disabled { opacity: .5; cursor: default; }
 </style>
